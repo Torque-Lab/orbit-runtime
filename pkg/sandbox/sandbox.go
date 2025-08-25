@@ -111,8 +111,11 @@ func init() {
 	bridgeCIDR := os.Getenv("MYRUNTIME_BRIDGE_CIDR")
 
 	// Mount proc
-	if err := syscall.Mount("proc", filepath.Join(rootfs, "proc"), "proc", 0, ""); err != nil {
-
+	procPath := filepath.Join(rootfs, "proc")
+	if err := os.MkdirAll(procPath, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "warn: failed to create proc dir: %v\n", err)
+	}
+	if err := syscall.Mount("proc", procPath, "proc", 0, ""); err != nil {
 		fmt.Fprintf(os.Stderr, "warn mount proc: %v\n", err)
 	}
 
@@ -182,11 +185,26 @@ func init() {
 	if len(args) == 0 {
 		os.Exit(0)
 	}
-	if err := syscall.Exec(args[0], args, os.Environ()); err != nil {
+
+	// Set up a minimal environment
+	env := []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"TERM=xterm",
+	}
+
+	// Use the full path to the command if it's not already absolute
+	cmdPath := args[0]
+	if !filepath.IsAbs(cmdPath) {
+		cmdPath = "/bin/" + cmdPath
+	}
+
+	// Replace the command in args with the full path
+	args[0] = cmdPath
+
+	if err := syscall.Exec(cmdPath, args, env); err != nil {
 		fmt.Fprintf(os.Stderr, "exec failed: %v\n", err)
 		os.Exit(1)
 	}
-
 }
 
 var capNames = map[string]capability.Cap{
